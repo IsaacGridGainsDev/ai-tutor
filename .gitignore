@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+backend/build/
+backend/dist/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+
+# Tauri / Rust
+frontend/src-tauri/target/
+frontend/src-tauri/gen/schemas/
+frontend/src-tauri/binaries/
+
+# Local data and models never belong in git
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+models/
+.env

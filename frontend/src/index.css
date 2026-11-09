@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+/* System fonts only: the app must look right with no network access. */
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Cambria, Georgia, serif;
+
+  --color-paper: #f7f6f3;
+  --color-surface: #ffffff;
+  --color-rule: #e3e1db;
+  --color-ink: #1f1e1b;
+  --color-muted: #6b6860;
+  --color-accent: #2f5d50;
+  --color-accent-soft: #e4ece8;
+  --color-danger: #a33a2c;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
