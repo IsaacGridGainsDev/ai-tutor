@@ -84,4 +84,8 @@ class TesseractOcr:
         if result.returncode != 0:
             detail = result.stderr.decode("utf-8", "replace").strip()[:300]
             raise OcrError(f"OCR failed on page {page_number}: {detail}")
-        return parse_tsv(result.stdout.decode("utf-8", "replace"), page_number)
+        output = result.stdout.decode("utf-8", "replace")
+        # A missing tessdata config still exits 0, so a blank page must be told apart from a broken install.
+        if not output.startswith("level\t"):
+            raise OcrError(f"OCR failed on page {page_number}: Tesseract did not produce TSV output.")
+        return parse_tsv(output, page_number)

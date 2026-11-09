@@ -1,11 +1,12 @@
 import re
+import subprocess
 from pathlib import Path
 
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
-from app.engines.documents.ocr import TesseractOcr, parse_tsv
+from app.engines.documents.ocr import OcrError, TesseractOcr, parse_tsv
 from app.engines.documents.segment import MAX_CHARS, segment_lines
 from app.engines.documents.models import Line
 from tests.pdf_factory import marker, scanned_copy, textbook, two_column
@@ -336,6 +337,13 @@ def test_parse_tsv_groups_lines() -> None:
     assert [line.text for line in lines] == ["Hello world", "Next"]
     assert lines[0].page == 7
     assert lines[0].block != lines[1].block
+
+
+def test_tesseract_without_tsv_output_is_an_error(tmp_path: Path, monkeypatch) -> None:
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: completed)
+    with pytest.raises(OcrError):
+        TesseractOcr(tmp_path / "tesseract.exe").recognize(b"png", 3)
 
 
 @pytest.mark.skipif(not ocr_available, reason="Tesseract is not installed")

@@ -55,3 +55,45 @@ Through the real window, both PDFs together: 12.6 s.
 
 **Mistake:** a bulk edit through PowerShell's default encoding garbled non-ASCII characters in
 `structure.py`. Repaired the same session and checked; use the edit tools or explicit UTF-8.
+
+## 2026-11-09: Phase 3, Local AI
+
+**Constraint from the owner:** use only the already-installed `qwen3.8:latest` and download no
+models until the app is built. The two-model benchmark is therefore deferred. `tools/evaluate.py`
+accepts several models, so it can be rerun unchanged.
+
+**Measured about the model:**
+
+- `/api/embed` returns 501 for qwen3.8, so there is no embedding model. Retrieval uses a pluggable
+  embedder that falls back to hashed word and character n-grams in FAISS. That matches word forms,
+  not meaning.
+- `size_vram` was 0 throughout: it ran entirely on CPU at about 4.7 tokens per second. Windows
+  reported the RTX 5080 as `CM_PROB_PHANTOM` (not present) with the laptop on battery, though
+  `nvidia-smi` worked at the start of the session. GPU performance has not been measured.
+
+**Evaluation on *Think Python*:**
+
+| Retrieval (20 questions) | hit@1 | hit@5 | MRR |
+| --- | --- | --- | --- |
+| Keyword (FTS5) | 0.30 | 0.85 | 0.51 |
+| Vector (hashing) | 0.40 | 0.80 | 0.56 |
+| Hybrid | 0.30 | 0.95 | 0.58 |
+
+Many of these questions share words with the section title, so hit rates would likely be lower for
+freely paraphrased questions.
+
+Grounded answers with qwen3.8 (6 questions): 5 behaved as expected, and 5 of 5 quotes verified
+against the source. All 3 questions the book cannot answer were reported as not found. The one
+counted miss gave the correct answer; the gold page range was too narrow, since the glossary on
+p. 69 also states it. Latency was 78-140 s with other work running on the machine, and 14-23 s
+through the real window with the model loaded.
+
+**Problems found by running the real thing, each now covered by a test:**
+
+1. Starlette's `BaseHTTPMiddleware` hid client disconnects, so stopping an answer would have left
+   the model generating. The token check is now plain ASGI middleware.
+2. Pressing Stop resubmitted the question. React reused one DOM node for Stop and Ask, which became
+   `type=submit` during the click. The buttons now have distinct keys.
+
+**Known behaviour:** Stop frees the interface immediately, but Ollama sends nothing until the first
+token, so the backend can only cancel generation at that point.

@@ -55,13 +55,18 @@ fn backend_command(_app: &AppHandle) -> Result<Command, String> {
 }
 
 #[cfg(not(debug_assertions))]
-fn backend_command(_app: &AppHandle) -> Result<Command, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let sidecar = exe.with_file_name("tutor-backend.exe");
-    if !sidecar.exists() {
-        return Err(format!("Backend executable not found at {}", sidecar.display()));
+fn backend_command(app: &AppHandle) -> Result<Command, String> {
+    let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let backend = resources.join("tutor-backend").join("tutor-backend.exe");
+    if !backend.exists() {
+        return Err(format!("Backend executable not found at {}", backend.display()));
     }
-    Ok(Command::new(sidecar))
+    let mut command = Command::new(backend);
+    let tesseract = resources.join("tesseract").join("tesseract.exe");
+    if tesseract.exists() {
+        command.env("TUTOR_TESSERACT_PATH", tesseract);
+    }
+    Ok(command)
 }
 
 fn launch(app: &AppHandle) -> Result<(BackendInfo, Child), String> {

@@ -48,6 +48,34 @@ frontend/e2e/      scripts that drive the real desktop window
 The four engines (document, knowledge, teaching, assessment) live under `backend/app/engines/`
 and must not import from `app/api`, keeping the AI independent of the interface.
 
+## Knowledge engine (`engines/knowledge`, `engines/llm`)
+
+```
+question ─▶ subject (content words, known concepts) ─▶ FTS5 + FAISS, fused ─▶ top passages ─▶ model ─▶ verify quotes
+```
+
+- `LLMProvider` is the only interface the engines use; `OllamaProvider` implements it.
+- Cloud models are refused inside the provider on every call, using Ollama's `remote_host` field as
+  well as the name, so no setting or UI path can send book text off the machine.
+- The model must label each claim as supported, background, interpretation or not found.
+- Grounding is enforced in code. A "supported" claim must quote its passage, the quote is checked
+  against the stored text, and a claim that fails is downgraded and flagged. Page numbers always
+  come from the database, never from the model.
+- A question sharing no words with the book is answered "not found" with no model call.
+- Prompts are capped at 4 passages and about 5000 characters.
+- `Embedder` is pluggable. An installed embedding model replaces the hashing fallback with no other
+  change, and each FAISS index is keyed by embedder and passage set, so it rebuilds itself.
+- The knowledge map is built at ingest with no model, from glossaries, "is called X" phrasing and
+  section titles. Model enrichment is per chapter and on request, and keeps only concepts whose
+  quoted evidence exists.
+
+## Packaging (`packaging/`)
+
+- The backend is frozen with PyInstaller as a folder rather than a single file, so it does not
+  unpack itself on every launch, and is bundled as a Tauri resource alongside Tesseract.
+- `build-installer.ps1` produces the NSIS installer. Ollama and models are not bundled.
+- `-E2E` builds a test-only version exposing the WebView debug port. Shipped builds cannot.
+
 ## Document pipeline (`engines/documents`)
 
 ```
