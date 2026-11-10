@@ -97,3 +97,28 @@ through the real window with the model loaded.
 
 **Known behaviour:** Stop frees the interface immediately, but Ollama sends nothing until the first
 token, so the backend can only cancel generation at that point.
+
+## 2026-11-10: Early packaging (requested by the owner before Phase 4)
+
+**Output:** an 84 MB NSIS installer (per user, no admin rights). Installed size is 340 MB: the
+frozen backend is 168 MB and Tesseract is 164 MB.
+
+**Problems found only by testing the frozen and installed builds:**
+
+1. Bundled Tesseract returned nothing, silently: the `tsv` output mode needs `tessdata/configs`.
+   It is now bundled, and output that is not TSV is an error.
+2. OCR failed on every page in the installed app only. Tauri gives resource paths in `\\?\C:\...`
+   form, and Tesseract cannot find its data from that path. The prefix is now removed, and the
+   first OCR error is shown in the book's failure message. Confirmed by reproducing with and
+   without the prefix.
+
+**Verified with the installed test build (same code, plus the debug port):** both PDFs processed
+(the scan with OCR: 40 pages, 4 chapters), navigation and search worked, the origin was
+`tauri.localhost` under the shipping CSP, and the backend stopped on close.
+
+**Verified with the installed shipping build:** it launches, the UI reaches the bundled backend,
+the debug port stays closed even when requested, and closing leaves no backend running.
+
+**Not completed:** an uninterrupted Ask run in the installed app. The attempts were interrupted by
+the owner using the window, by this tool's 590 s command limit (which closed the app), and by
+Claude Code killing a run under low memory. Ask passed end to end in the debug desktop build.

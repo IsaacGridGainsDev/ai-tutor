@@ -57,16 +57,18 @@ def _read_pages(doc: pymupdf.Document, report: Callable[..., None]) -> tuple[lis
 
 def _run_ocr(
     doc: pymupdf.Document, pages: list[PageText], needing: list[int], ocr: OcrEngine, report: Callable[..., None]
-) -> list[int]:
+) -> tuple[list[int], str | None]:
     """OCR pages in small batches to bound memory; rendering stays on this thread."""
     failed: list[int] = []
+    errors: list[str] = []
     batch_size = _OCR_WORKERS * 2
 
     def recognize(item: tuple[int, bytes]) -> tuple[int, list[Line] | None]:
         index, png = item
         try:
             return index, ocr.recognize(png, index + 1)
-        except OcrError:
+        except OcrError as exc:
+            errors.append(str(exc))
             return index, None
 
     with ThreadPoolExecutor(_OCR_WORKERS) as pool:
@@ -83,7 +85,7 @@ def _run_ocr(
                 elif lines:
                     pages[index].lines = lines
                     pages[index].source = "ocr"
-    return failed
+    return failed, errors[0] if errors else None
 
 
 def _store(
@@ -157,12 +159,14 @@ def process_book(conn: sqlite3.Connection, book_id: int, ocr: OcrEngine | None) 
 
             detail = None
             failed: list[int] = []
+            first_error = None
             if needing_ocr and ocr:
-                failed = _run_ocr(doc, pages, needing_ocr, ocr, report)
+                failed, first_error = _run_ocr(doc, pages, needing_ocr, ocr, report)
             elif needing_ocr:
                 detail = f"OCR engine not installed; {len(needing_ocr)} scanned pages have no text."
             if failed:
-                detail = f"OCR failed on pages: {', '.join(map(str, failed[:20]))}" + ("…" if len(failed) > 20 else "")
+                listed = ", ".join(map(str, failed[:20])) + ("…" if len(failed) > 20 else "")
+                detail = f"OCR failed on pages {listed}. First error: {first_error}"
 
             report("structuring", 0.85, "Finding chapters and sections")
             title, author = extract.book_metadata(doc, row["file_name"], pages)

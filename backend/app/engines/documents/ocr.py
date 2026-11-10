@@ -56,7 +56,9 @@ def parse_tsv(tsv: str, page_number: int) -> list[Line]:
 
 class TesseractOcr:
     def __init__(self, executable: Path, language: str = "eng") -> None:
-        self.executable = executable
+        # Tesseract finds its language data from its own path, which fails under the \\?\ form
+        # that Tauri uses for an installed app's resource folder.
+        self.executable = Path(str(executable).removeprefix("\\\\?\\"))
         self.language = language
 
     @classmethod

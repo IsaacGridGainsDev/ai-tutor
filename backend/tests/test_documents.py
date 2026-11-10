@@ -339,6 +339,25 @@ def test_parse_tsv_groups_lines() -> None:
     assert lines[0].block != lines[1].block
 
 
+def test_extended_length_path_prefix_is_removed() -> None:
+    engine = TesseractOcr(Path("\\\\?\\C:\\Program Files\\App\\tesseract\\tesseract.exe"))
+    assert str(engine.executable) == "C:\\Program Files\\App\\tesseract\\tesseract.exe"
+
+
+def test_ocr_failure_reason_is_recorded(client: TestClient, tmp_path: Path, monkeypatch) -> None:
+    class BrokenOcr:
+        def recognize(self, png: bytes, page_number: int):
+            raise OcrError(f"OCR failed on page {page_number}: Error opening data file")
+
+    source, scan = tmp_path / "s.pdf", tmp_path / "broken.pdf"
+    textbook(source, chapters=1, sections=1, paragraphs=1)
+    scanned_copy(source, scan, dpi=60)
+    monkeypatch.setattr(TesseractOcr, "discover", classmethod(lambda cls, configured=None: BrokenOcr()))
+    book = upload(client, scan)
+    assert book["status"] == "failed"
+    assert "Error opening data file" in book["status_detail"]
+
+
 def test_tesseract_without_tsv_output_is_an_error(tmp_path: Path, monkeypatch) -> None:
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: completed)

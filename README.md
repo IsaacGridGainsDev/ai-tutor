@@ -3,6 +3,15 @@
 An offline-first Windows desktop tutor for PDFs. See `IMPLEMENTATION_STATUS.md` for what works today,
 `ARCHITECTURE.md` for the design and `DEVELOPMENT_LOG.md` for the build history.
 
+## Install
+
+Run `release\Interactive Tutor_0.1.0_x64-setup.exe`. It installs for the current user without admin
+rights and is not code-signed, so Windows SmartScreen will ask for confirmation. The app needs
+[Ollama](https://ollama.com) running with at least one local model. OCR is included.
+
+To rebuild the installer, run `powershell -File packaging\build-installer.ps1`, which needs the
+development prerequisites below.
+
 ## Prerequisites
 
 - Windows 11 with WebView2
