@@ -5,7 +5,7 @@ An offline-first Windows desktop tutor for PDFs. See `IMPLEMENTATION_STATUS.md` 
 
 ## Install
 
-Run `release\Interactive Tutor_0.1.0_x64-setup.exe`. It installs for the current user without admin
+Run `release\Interactive Tutor_0.5.0_x64-setup.exe`. It installs for the current user without admin
 rights and is not code-signed, so Windows SmartScreen will ask for confirmation. The app needs
 [Ollama](https://ollama.com) running with at least one local model. OCR is included.
 
@@ -21,7 +21,8 @@ development prerequisites below.
 - Tesseract OCR, for scanned PDFs (`winget install UB-Mannheim.TesseractOCR`). Set
   `TUTOR_TESSERACT_PATH` if it is not in the default location. Without it, scanned pages have no text
   and the app says so.
-- Ollama, for later phases
+- Ollama with a local model, for Ask, concept enrichment and model-drawn diagrams. Set
+  `TUTOR_OLLAMA_URL` if it is not at `http://127.0.0.1:11434`.
 
 ## Setup
 
@@ -49,6 +50,8 @@ The shell starts the Python backend itself. Application data is stored in
 ```powershell
 cd backend;  .venv\Scripts\python.exe -m pytest
 cd frontend; npm test
+cd engine\core; cargo test
+cd engine\geometry; cargo test
 ```
 
 ## Licensing note

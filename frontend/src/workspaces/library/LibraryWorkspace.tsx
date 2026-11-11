@@ -1,7 +1,10 @@
 import { type ChangeEvent, type DragEvent, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient, Book, Collection } from "../../api/client";
-import { BookDetail } from "./BookDetail";
+import { BookDetail, type OpenTarget } from "./BookDetail";
 import { BookRow } from "./BookRow";
+import { SearchBox, SearchResults, useSearch } from "./Search";
+
+const EVERYWHERE = { kind: "all" } as const;
 
 const POLL_MS = 1200;
 
@@ -16,6 +19,9 @@ export function LibraryWorkspace({ client }: { client: ApiClient }) {
   const [collectionId, setCollectionId] = useState<number | null>(null);
   const [newCollection, setNewCollection] = useState("");
   const [openBookId, setOpenBookId] = useState<number | null>(null);
+  /** The search result the open book should show. `visit` remounts the reader for each new result. */
+  const [target, setTarget] = useState<(OpenTarget & { visit: number }) | null>(null);
+  const search = useSearch(client, EVERYWHERE);
   const [message, setMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(0);
@@ -92,8 +98,39 @@ export function LibraryWorkspace({ client }: { client: ApiClient }) {
     }
   }
 
+  function openResult(bookId: number, next: OpenTarget) {
+    // The book may be hidden by the title or collection filter, so show everything.
+    if (!books.some((book) => book.id === bookId)) {
+      setQuery("");
+      setCollectionId(null);
+    }
+    setTarget((previous) => ({ ...next, visit: (previous?.visit ?? 0) + 1 }));
+    setOpenBookId(bookId);
+  }
+
+  function openFromLibrary(bookId: number, sectionId: number, passageId: number, title: string) {
+    const text = search.query.trim();
+    client.rememberSearch(text, EVERYWHERE, title).catch(() => undefined);
+    openResult(bookId, { sectionId, passageId, query: text });
+  }
+
   const openBook = books.find((book) => book.id === openBookId);
-  if (openBook) return <BookDetail client={client} book={openBook} onBack={() => setOpenBookId(null)} />;
+  if (openBook) {
+    return (
+      <BookDetail
+        key={`${openBook.id}:${target?.visit ?? 0}`}
+        client={client}
+        book={openBook}
+        initial={target ?? undefined}
+        onOpenBook={openResult}
+        onBack={() => {
+          setOpenBookId(null);
+          setTarget(null);
+        }}
+      />
+    );
+  }
+  const searching = search.query.trim() !== "";
 
   return (
     <div
@@ -105,6 +142,34 @@ export function LibraryWorkspace({ client }: { client: ApiClient }) {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
     >
+      <div className="mb-5">
+        <SearchBox
+          client={client}
+          label="Search all books"
+          query={search.query}
+          onQuery={search.setQuery}
+          onCommit={() => void client.rememberSearch(search.query.trim(), EVERYWHERE, null).catch(() => undefined)}
+        />
+      </div>
+
+      {search.error && (
+        <p role="alert" className="mb-4 rounded-md border border-danger/30 p-3 text-sm text-danger">
+          {search.error}
+        </p>
+      )}
+
+      {searching && (
+        <div className="max-w-3xl">
+          <SearchResults
+            result={search.result}
+            pending={search.pending}
+            onOpen={(hit) => openFromLibrary(hit.book_id, hit.section_id, hit.passage_id, hit.section_title)}
+            onOpenConcept={(concept) => openFromLibrary(concept.book_id, concept.section_id, concept.passage_id, concept.name)}
+          />
+        </div>
+      )}
+
+      <div hidden={searching}>
       <div className="mb-6 flex items-center gap-3">
         <input
           ref={input}
@@ -125,8 +190,8 @@ export function LibraryWorkspace({ client }: { client: ApiClient }) {
         <input
           type="search"
           value={query}
-          placeholder="Search titles"
-          aria-label="Search titles"
+          placeholder="Filter by title"
+          aria-label="Filter by title"
           onChange={(event) => setQuery(event.target.value)}
           className="w-64 rounded-md border border-rule bg-surface px-3 py-2 text-sm"
         />
@@ -206,6 +271,7 @@ export function LibraryWorkspace({ client }: { client: ApiClient }) {
             </ul>
           )}
         </section>
+      </div>
       </div>
     </div>
   );

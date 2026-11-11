@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { type AiStatus, ApiClient, type AppSettings, type AskEvent } from "../../api/client";
+import { invokerOver } from "../../api/testing";
 import { ModelSettings } from "../ModelSettings";
 import { AskPanel } from "./AskPanel";
 
@@ -19,7 +20,7 @@ const STATUS: AiStatus = {
 };
 
 function client() {
-  return new ApiClient({ baseUrl: "http://x", token: "t" });
+  return new ApiClient({ baseUrl: "http://x", token: "t" }, invokerOver((url, init) => fetch(url, init)));
 }
 
 function stream(events: unknown[]) {

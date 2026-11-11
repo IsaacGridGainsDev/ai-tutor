@@ -1,0 +1,8 @@
+[package]
+name = "tutor-geometry"
+version = "0.1.0"
+edition = "2021"
+description = "Flat-faced solid modelling for the Interactive Tutor: faces with holes, push/pull, solidity checks and meshes for drawing"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

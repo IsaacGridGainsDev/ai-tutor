@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     # the health probe must present it, so web pages cannot reach the local API.
     api_token: str | None = None
     tesseract_path: Path | None = None
-    ollama_url: str = "http://127.0.0.1:11434"
     allowed_origins: list[str] = [
         "http://localhost:1420",
         "http://127.0.0.1:1420",

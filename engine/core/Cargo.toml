@@ -1,0 +1,15 @@
+[package]
+name = "tutor-core"
+version = "0.1.0"
+edition = "2021"
+description = "The Interactive Tutor's engines, being moved here from Python stage by stage"
+
+[dependencies]
+crc32fast = "1"
+fancy-regex = "0.14"
+regex = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Plain HTTP to the model runtime on this computer; no TLS is needed or built.
+ureq = { version = "2", default-features = false, features = ["json"] }

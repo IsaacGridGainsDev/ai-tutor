@@ -3,6 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { ApiClient, ApiError } from "./api/client";
+import { invokerOver } from "./api/testing";
+
+// The app runs as it does in the desktop window, with the engine commands answered by the same
+// route table as the backend calls.
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => true,
+  invoke: (command: string, args?: Record<string, unknown>) =>
+    command === "backend_info"
+      ? Promise.resolve({ baseUrl: "http://x", token: "t" })
+      : invokerOver((url, init) => fetch(url, init))(command, args),
+}));
 
 const SETTINGS = {
   llm_model: null,
@@ -26,11 +37,11 @@ describe("ApiClient", () => {
     vi.stubGlobal("fetch", fetchMock);
     const client = new ApiClient({ baseUrl: "http://127.0.0.1:1", token: "abc" });
 
-    const failure = client.getSettings();
+    const failure = client.health();
     await expect(failure).rejects.toBeInstanceOf(ApiError);
     await expect(failure).rejects.toThrow("nope");
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("http://127.0.0.1:1/api/settings");
+    expect(url).toBe("http://127.0.0.1:1/api/health");
     expect(new Headers(init.headers).get("x-tutor-token")).toBe("abc");
   });
 });

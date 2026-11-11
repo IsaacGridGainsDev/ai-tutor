@@ -13,8 +13,8 @@ Set-Location $backend
     --paths $backend `
     --add-data "$backend\app\db\migrations;app\db\migrations" `
     --collect-submodules uvicorn `
-    --collect-binaries faiss `
     --exclude-module onnxruntime --exclude-module pymupdf_layout --exclude-module pymupdf4llm `
+    --exclude-module faiss --exclude-module numpy --exclude-module httpx `
     --exclude-module tkinter --exclude-module pytest --exclude-module PyInstaller `
     run_backend.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }

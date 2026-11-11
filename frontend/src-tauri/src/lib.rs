@@ -1,4 +1,8 @@
+mod ai;
 mod backend;
+mod library;
+mod model;
+mod visual;
 
 use tauri::{Manager, RunEvent};
 
@@ -19,12 +23,47 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
 pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
+            // Before the backend starts, so the two never bring the database up to date at once.
+            // A failure here is reported by the first screen that reads the library.
+            let _ = visual::with_library(tutor_core::db::migrate);
             let backend = backend::Backend::start(app.handle());
             app.manage(backend);
+            app.manage(ai::Models::new());
             create_main_window(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![backend::backend_info])
+        .invoke_handler(tauri::generate_handler![
+            backend::backend_info,
+            model::room_model,
+            visual::book_visuals,
+            visual::diagram_delete,
+            visual::climate_list,
+            visual::climate_candidates,
+            visual::climate_save,
+            visual::climate_delete,
+            visual::climate_parse,
+            library::books_list,
+            library::book_set_collections,
+            library::book_structure,
+            library::section_passages,
+            library::collections_list,
+            library::collection_create,
+            library::collection_delete,
+            library::search_library,
+            library::search_recent,
+            library::search_remember,
+            library::search_clear_recent,
+            library::settings_get,
+            library::settings_put,
+            ai::ai_status,
+            ai::ask,
+            ai::model_pull,
+            ai::stop_request,
+            ai::model_delete,
+            ai::book_concepts,
+            ai::concepts_enrich,
+            ai::section_draw,
+        ])
         .build(tauri::generate_context!())
         .expect("failed to build the Tauri application");
 

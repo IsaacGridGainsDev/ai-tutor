@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from app.engines.documents.ocr import OcrError, TesseractOcr, parse_tsv
 from app.engines.documents.segment import MAX_CHARS, segment_lines
 from app.engines.documents.models import Line
+from tests import library_view
+from tests.library_view import MARK_START, all_passages
 from tests.pdf_factory import marker, scanned_copy, textbook, two_column
 
 ocr_available = TesseractOcr.discover() is not None
@@ -20,17 +22,7 @@ def upload(client: TestClient, path: Path, wait: bool = True) -> dict:
     assert response.status_code == 201, response.text
     if wait:
         client.app.state.worker.join()
-    return client.get(f"/api/books/{response.json()['id']}").json()
-
-
-def all_passages(client: TestClient, book_id: int) -> list[dict]:
-    structure = client.get(f"/api/books/{book_id}/structure").json()
-    return [
-        passage
-        for chapter in structure
-        for section in chapter["sections"]
-        for passage in client.get(f"/api/sections/{section['id']}/passages").json()
-    ]
+    return library_view.book(client, response.json()['id'])
 
 
 def assert_page_references_hold(passages: list[dict]) -> int:
@@ -64,7 +56,7 @@ def test_detects_chapters_from_outline(client: TestClient, tmp_path: Path) -> No
     path = tmp_path / "outlined.pdf"
     toc = textbook(path, chapters=4, outline=True)
     book = upload(client, path)
-    structure = client.get(f"/api/books/{book['id']}/structure").json()
+    structure = library_view.structure(client, book['id'])
     chapters = [c for c in structure if c["title"] != "Front matter"]
     assert [c["title"] for c in chapters] == [f"Topic {n}" for n in range(1, 5)]
     assert all(c["detection_method"] == "outline" for c in structure)
@@ -77,7 +69,7 @@ def test_detects_chapters_without_outline(client: TestClient, tmp_path: Path) ->
     path = tmp_path / "plain.pdf"
     toc = textbook(path, chapters=4, outline=False)
     book = upload(client, path)
-    structure = client.get(f"/api/books/{book['id']}/structure").json()
+    structure = library_view.structure(client, book['id'])
     chapters = [c for c in structure if c["title"] != "Front matter"]
     assert [c["title"] for c in chapters] == [f"Chapter {n}: Topic {n}" for n in range(1, 5)]
     assert chapters[0]["detection_method"] == "heading_pattern"
@@ -95,7 +87,7 @@ def test_contents_page_is_not_mistaken_for_chapters(client: TestClient, tmp_path
         fixed = tmp_path / "with_contents_final.pdf"
         doc.save(fixed)
     book = upload(client, fixed)
-    structure = client.get(f"/api/books/{book['id']}/structure").json()
+    structure = library_view.structure(client, book['id'])
     expected = [entry[2] + 1 for entry in toc if entry[0] == 1]
     assert [c["start_page"] for c in structure if c["title"].startswith("Chapter")] == expected
     text = "\n".join(p["text"] for p in all_passages(client, book["id"]))
@@ -134,7 +126,7 @@ def test_unstructured_document_gets_honest_fallback(client: TestClient, tmp_path
         doc.new_page().insert_text((72, 100), f"Plain body text on page {n}, with nothing to mark it out.", fontsize=11)
     doc.save(path)
     book = upload(client, path)
-    structure = client.get(f"/api/books/{book['id']}/structure").json()
+    structure = library_view.structure(client, book['id'])
     assert [c["title"] for c in structure] == ["Full document"]
 
 
@@ -146,7 +138,7 @@ def test_page_references_are_preserved(client: TestClient, tmp_path: Path, outli
     passages = all_passages(client, book["id"])
     assert assert_page_references_hold(passages) > 20
     # Text must also be readable page by page.
-    page = client.get(f"/api/books/{book['id']}/pages/3").json()
+    page = library_view.page(client, book['id'], 3)
     assert marker(3) in page["text"]
     assert page["source"] == "text"
 
@@ -202,17 +194,9 @@ def test_search_returns_page_references(client: TestClient, tmp_path: Path) -> N
     path = tmp_path / "search.pdf"
     textbook(path, chapters=2, paragraphs=6)
     book = upload(client, path)
-    hits = client.get(f"/api/books/{book['id']}/search", params={"q": marker(4)}).json()
+    hits = library_view.find(client, book['id'], marker(4))
     assert hits and all(h["start_page"] <= 4 <= h["end_page"] for h in hits)
-    assert "[[" in hits[0]["snippet"]
-
-
-@pytest.mark.parametrize("query", ['"', "AND OR NOT", "energy* NEAR(", "col:umn"])
-def test_search_survives_fts_syntax(client: TestClient, tmp_path: Path, query: str) -> None:
-    path = tmp_path / "syntax.pdf"
-    textbook(path, chapters=2)
-    book = upload(client, path)
-    assert client.get(f"/api/books/{book['id']}/search", params={"q": query}).status_code == 200
+    assert MARK_START in hits[0]["snippet"]
 
 
 def test_rejects_non_pdf(client: TestClient) -> None:
@@ -262,8 +246,22 @@ def test_remove_deletes_rows_and_file(client: TestClient, tmp_path: Path, settin
     stored = list((settings.data_dir / "documents").glob("*.pdf"))
     assert len(stored) == 1
     assert client.delete(f"/api/books/{book['id']}").status_code == 204
-    assert client.get(f"/api/books/{book['id']}").status_code == 404
+    assert library_view.book(client, book['id']) is None
     assert not stored[0].exists()
+
+
+def test_remove_deletes_the_search_vectors_made_for_the_book(client: TestClient, tmp_path: Path, settings) -> None:
+    path = tmp_path / "indexed.pdf"
+    textbook(path, chapters=2)
+    book = upload(client, path)
+    indexes = settings.data_dir / "indexes"
+    indexes.mkdir()
+    mine = [indexes / f"book-{book['id']}-hashing-v1-9-1-9.vec", indexes / f"book-{book['id']}-hashing-v1-9-1-9.faiss"]
+    other = indexes / f"book-{book['id']}0-hashing-v1-9-1-9.vec"
+    for file in [*mine, other]:
+        file.write_bytes(b"vectors")
+    assert client.delete(f"/api/books/{book['id']}").status_code == 204
+    assert not any(file.exists() for file in mine) and other.exists()
 
 
 def test_remove_during_processing_does_not_fail(client: TestClient, tmp_path: Path) -> None:
@@ -272,27 +270,7 @@ def test_remove_during_processing_does_not_fail(client: TestClient, tmp_path: Pa
     book = upload(client, path, wait=False)
     assert client.delete(f"/api/books/{book['id']}").status_code == 204
     client.app.state.worker.join()
-    assert client.get("/api/books").json() == []
-
-
-def test_collections_and_title_search(client: TestClient, tmp_path: Path) -> None:
-    first, second = tmp_path / "a.pdf", tmp_path / "b.pdf"
-    textbook(first, chapters=2, title="Organic Chemistry", paragraphs=2)
-    textbook(second, chapters=2, title="Linear Algebra", paragraphs=3)
-    a, b = upload(client, first), upload(client, second)
-
-    science = client.post("/api/collections", json={"name": "Science"}).json()
-    assert client.post("/api/collections", json={"name": "Science"}).status_code == 409
-    client.put(f"/api/books/{a['id']}/collections", json={"collection_ids": [science["id"]]})
-
-    in_collection = client.get("/api/books", params={"collection_id": science["id"]}).json()
-    assert [book["id"] for book in in_collection] == [a["id"]]
-    found = client.get("/api/books", params={"q": "algebra"}).json()
-    assert [book["id"] for book in found] == [b["id"]]
-    assert client.get("/api/books", params={"q": "%"}).json() == []
-
-    assert client.delete(f"/api/collections/{science['id']}").status_code == 204
-    assert client.get(f"/api/books/{a['id']}").json()["collection_ids"] == []
+    assert library_view.books(client) == []
 
 
 def test_interrupted_processing_resumes_on_restart(settings, tmp_path: Path) -> None:
@@ -309,16 +287,14 @@ def test_interrupted_processing_resumes_on_restart(settings, tmp_path: Path) -> 
     conn.close()
     with TestClient(create_app(settings)) as second:
         second.app.state.worker.join()
-        restored = second.get(f"/api/books/{book['id']}").json()
+        restored = library_view.book(second, book['id'])
         assert restored["status"] == "ready"
         assert restored["passage_count"] == book["passage_count"]
 
 
 def test_custom_storage_location_is_used(client: TestClient, tmp_path: Path) -> None:
     custom = tmp_path / "my books"
-    current = client.get("/api/settings").json()
-    current["document_storage_path"] = str(custom)
-    client.put("/api/settings", json=current)
+    library_view.set_setting(client, "document_storage_path", str(custom))
     path = tmp_path / "stored.pdf"
     textbook(path, chapters=2)
     upload(client, path)
@@ -377,12 +353,12 @@ def test_scanned_document_is_read_with_ocr(client: TestClient, tmp_path: Path) -
     assert book["status"] == "ready", book["status_detail"]
     assert book["needs_ocr"] is True
 
-    structure = client.get(f"/api/books/{book['id']}/structure").json()
+    structure = library_view.structure(client, book['id'])
     assert [c["title"] for c in structure if c["title"] != "Front matter"] == [
         "Chapter 1: Topic 1", "Chapter 2: Topic 2"
     ]
     passages = all_passages(client, book["id"])
     assert assert_page_references_hold(passages) >= 2
-    assert client.get(f"/api/books/{book['id']}/pages/3").json()["source"] == "ocr"
-    hits = client.get(f"/api/books/{book['id']}/search", params={"q": "measurable energy"}).json()
+    assert library_view.page(client, book['id'], 3)["source"] == "ocr"
+    hits = library_view.find(client, book['id'], "measurable energy")
     assert hits

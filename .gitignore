@@ -15,6 +15,7 @@ frontend/playwright-report/
 
 # Tauri / Rust
 frontend/src-tauri/target/
+engine/**/target/
 frontend/src-tauri/gen/schemas/
 frontend/src-tauri/binaries/
 
@@ -28,3 +29,6 @@ backend/build/
 *.sqlite3-shm
 models/
 .env
+
+# Brainstorm mockups
+.superpowers/

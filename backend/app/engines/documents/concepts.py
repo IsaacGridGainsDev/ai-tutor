@@ -1,12 +1,11 @@
-import json
+"""The concepts a document marks out itself, found without a model when it is processed.
+
+Adding to them with the local model is done by the Rust engine (`engine/core/src/concepts.rs`).
+"""
 import math
 import re
 import sqlite3
 from typing import Any
-
-from app.engines.knowledge.grounding import quote_appears_in
-from app.engines.llm import prompts
-from app.engines.llm.base import LLMError, LLMProvider
 
 _GLOSSARY_SECTION = re.compile(r"glossary|key terms|definitions|vocabulary", re.I)
 _GENERIC_TITLE = re.compile(
@@ -23,9 +22,8 @@ _SENTENCE = re.compile(r"[^.!?]+[.!?]")
 _LEADING_NUMBER = re.compile(r"^[\d.]+\s+")
 _MAX_LINKS = 40
 _MIN_SHARED_PASSAGES = 3
-_MAX_EXCERPT_CHARS = 6000
 
-_WEIGHTS = {"glossary": 1.0, "called": 0.7, "section": 0.4, "model": 0.8}
+_WEIGHTS = {"glossary": 1.0, "called": 0.7, "section": 0.4}
 
 
 def normalize_name(name: str) -> str:
@@ -131,56 +129,3 @@ def extract_concepts(conn: sqlite3.Connection, book_id: int) -> int:
         (book_id, _MIN_SHARED_PASSAGES),
     )
     return len(ids)
-
-
-def enrich_chapter_concepts(
-    conn: sqlite3.Connection, llm: LLMProvider, chapter_id: int, model: str, options: dict[str, Any]
-) -> int:
-    """Ask the model for further concepts, keeping only those whose quoted evidence really exists."""
-    chapter = conn.execute("SELECT id, book_id, title FROM chapters WHERE id = ?", (chapter_id,)).fetchone()
-    passages = conn.execute(
-        "SELECT id, text FROM passages WHERE chapter_id = ? ORDER BY id", (chapter_id,)
-    ).fetchall()
-    if chapter is None or not passages:
-        return 0
-
-    excerpt, included = "", []
-    for passage in passages:
-        if len(excerpt) + len(passage["text"]) > _MAX_EXCERPT_CHARS and excerpt:
-            break
-        excerpt += passage["text"] + "\n\n"
-        included.append(passage)
-
-    messages = [
-        {"role": "system", "content": prompts.CONCEPT_EXTRACTION_SYSTEM},
-        {"role": "user", "content": prompts.CONCEPT_EXTRACTION_USER.format(title=chapter["title"], excerpt=excerpt)},
-    ]
-    content = "".join(chunk.delta for chunk in llm.chat_stream(model, messages, prompts.CONCEPT_EXTRACTION_SCHEMA, options))
-    try:
-        items = json.loads(content)["concepts"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise LLMError("The model returned concepts that could not be read. Please try again.") from exc
-
-    added = 0
-    with conn:
-        for item in items:
-            name, definition, quote = (str(item.get(field) or "").strip() for field in ("name", "definition", "quote"))
-            key = normalize_name(name)
-            source = next((p for p in included if quote_appears_in(quote, p["text"])), None)
-            if len(key) < 3 or source is None:
-                continue
-            existing = conn.execute(
-                "SELECT id, definition FROM concepts WHERE book_id = ? AND normalized_name = ?", (chapter["book_id"], key)
-            ).fetchone()
-            if existing:
-                concept_id = existing["id"]
-                if not existing["definition"] and definition:
-                    conn.execute("UPDATE concepts SET definition = ? WHERE id = ?", (definition, concept_id))
-            else:
-                concept_id = conn.execute(
-                    "INSERT INTO concepts (book_id, name, normalized_name, definition, importance) VALUES (?, ?, ?, ?, ?)",
-                    (chapter["book_id"], name, key, definition or None, _WEIGHTS["model"]),
-                ).lastrowid
-                added += 1
-            conn.execute("INSERT OR IGNORE INTO passage_concepts (passage_id, concept_id) VALUES (?, ?)", (source["id"], concept_id))
-    return added

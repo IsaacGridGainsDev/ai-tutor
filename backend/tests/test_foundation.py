@@ -82,24 +82,6 @@ def test_fts_tracks_passages(tmp_path) -> None:
     conn.close()
 
 
-def test_settings_persist_across_restart(settings: Settings) -> None:
-    with TestClient(create_app(settings)) as first:
-        current = first.get("/api/settings").json()
-        current["reading_speed"] = 1.25
-        current["compute_preference"] = "cpu"
-        assert first.put("/api/settings", json=current).status_code == 200
-    with TestClient(create_app(settings)) as second:
-        body = second.get("/api/settings").json()
-    assert body["reading_speed"] == 1.25
-    assert body["compute_preference"] == "cpu"
-
-
-def test_settings_rejects_out_of_range_speed(client: TestClient) -> None:
-    current = client.get("/api/settings").json()
-    current["reading_speed"] = 9
-    assert client.put("/api/settings", json=current).status_code == 422
-
-
 @pytest.fixture
 def secured(tmp_path):
     secured_settings = Settings(data_dir=tmp_path / "data", api_token="s3cret")
@@ -108,9 +90,10 @@ def secured(tmp_path):
 
 
 def test_token_required_when_configured(secured: TestClient) -> None:
-    assert secured.get("/api/settings").status_code == 401
-    assert secured.get("/api/settings", headers={"x-tutor-token": "wrong"}).status_code == 401
-    assert secured.get("/api/settings", headers={"x-tutor-token": "s3cret"}).status_code == 200
+    # Removing a book that does not exist: refused without the token, looked for with it.
+    assert secured.delete("/api/books/999").status_code == 401
+    assert secured.delete("/api/books/999", headers={"x-tutor-token": "wrong"}).status_code == 401
+    assert secured.delete("/api/books/999", headers={"x-tutor-token": "s3cret"}).status_code == 404
 
 
 def test_health_is_public_when_token_configured(secured: TestClient) -> None:

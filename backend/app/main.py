@@ -9,14 +9,11 @@ from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app import __version__
-from app.api import ai, health, library, settings as settings_api
+from app.api import health, library
 from app.config import Settings
 from app.db.connection import connect
 from app.db.migrate import migrate
 from app.engines.documents.worker import IngestWorker
-from app.engines.knowledge.vector_store import VectorStore
-from app.engines.llm.base import LLMProvider
-from app.engines.llm.ollama import OllamaProvider
 
 API_PREFIX = "/api"
 TOKEN_HEADER = "x-tutor-token"
@@ -45,7 +42,7 @@ class TokenMiddleware:
         await self.app(scope, receive, send)
 
 
-def create_app(settings: Settings | None = None, llm: LLMProvider | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
 
     @asynccontextmanager
@@ -64,8 +61,6 @@ def create_app(settings: Settings | None = None, llm: LLMProvider | None = None)
 
     app = FastAPI(title="Interactive Tutor", version=__version__, lifespan=lifespan)
     app.state.settings = settings
-    app.state.llm = llm or OllamaProvider(settings.ollama_url)
-    app.state.vectors = VectorStore(settings.data_dir / "indexes")
 
     app.add_middleware(TokenMiddleware, token=settings.api_token)
 
@@ -78,7 +73,5 @@ def create_app(settings: Settings | None = None, llm: LLMProvider | None = None)
     )
 
     app.include_router(health.router, prefix=API_PREFIX)
-    app.include_router(settings_api.router, prefix=API_PREFIX)
     app.include_router(library.router, prefix=API_PREFIX)
-    app.include_router(ai.router, prefix=API_PREFIX)
     return app
